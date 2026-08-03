@@ -32,7 +32,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ros2                # Enforces that the workflow always builds from the ros2 branch
           path: src/ouster-ros2
           submodules: recursive
 
