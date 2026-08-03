@@ -1,3 +1,13 @@
+# NFA fork details
+At the time of writing, this is based on the tag `ros2-0.14.0`, as the latest upstream `ros2` crashes with a fun 
+
+```
+component_container-4] terminate called after throwing an instance of 'std::out_of_range'
+[component_container-4]   what():  Field 'WINDOW' not found in LidarScan.
+```
+
+Why are we using Ouster stuff again?
+
 # Official ROS driver for Ouster sensors
 
 [ROS1 (melodic/noetic)](https://github.com/ouster-lidar/ouster-ros/tree/master) |
