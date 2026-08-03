@@ -66,8 +66,8 @@ jobs:
           dpkg -i *.deb || apt-get install -f -y
           
           # 2. Build the core driver package
-          echo "Building package: ouster_ros"
-          cd /workspace/src/ouster-ros2/ouster_ros
+          echo "Building package: ouster-ros"
+          cd /workspace/src/ouster-ros2/ouster-ros
           bloom-generate rosdebian --os-name ubuntu --os-version ${{ matrix.ubuntu_distro }} --ros-distro ${{ matrix.ros_distro }}
           fakeroot debian/rules binary
           
