@@ -8,7 +8,6 @@ on:
         required: true
         type: string
 
-# Required permissions for softprops/action-gh-release to create the release
 permissions:
   contents: write
 
@@ -33,6 +32,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ros2                # Enforces that the workflow always builds from the ros2 branch
           path: src/ouster-ros2
           submodules: recursive
 
@@ -42,22 +42,41 @@ jobs:
 
       - name: Build DEB inside Docker
         run: |
-          # Use the official ROS Docker image matching the target architecture
-          docker run --rm \
+          docker run --rm -i \
             --platform ${{ matrix.platform }} \
             -v ${{ github.workspace }}:/workspace \
             ros:${{ matrix.ros_distro }}-ros-base \
-            /bin/bash -c "
-              apt-get update && \
-              apt-get install -y python3-bloom fakeroot dpkg-dev debhelper dh-python python3-rosdep && \
-              cd /workspace/src/ouster-ros2 && \
-              rosdep update && \
-              rosdep install --from-paths . --ignore-src -y --rosdistro ${{ matrix.ros_distro }} && \
-              bloom-generate rosdebian --os-name ubuntu --os-version ${{ matrix.ubuntu_distro }} --ros-distro ${{ matrix.ros_distro }} && \
-              fakeroot debian/rules binary && \
-              mkdir -p /workspace/output && \
-              mv ../*.deb /workspace/output/
-            "
+            /bin/bash << 'EOF'
+          
+          set -e
+          apt-get update
+          apt-get install -y python3-bloom fakeroot dpkg-dev debhelper dh-python python3-rosdep
+          
+          cd /workspace/src/ouster-ros2
+          rosdep update
+          rosdep install --from-paths . --ignore-src -y --rosdistro ${{ matrix.ros_distro }}
+          
+          # 1. Build the messages package
+          echo "Building package: ouster-sensor-msgs"
+          cd /workspace/src/ouster-ros2/ouster-sensor-msgs
+          bloom-generate rosdebian --os-name ubuntu --os-version ${{ matrix.ubuntu_distro }} --ros-distro ${{ matrix.ros_distro }}
+          fakeroot debian/rules binary
+          
+          # Install the newly built message DEB so the driver can resolve it as a dependency
+          cd /workspace/src/ouster-ros2
+          dpkg -i *.deb || apt-get install -f -y
+          
+          # 2. Build the core driver package
+          echo "Building package: ouster_ros"
+          cd /workspace/src/ouster-ros2/ouster_ros
+          bloom-generate rosdebian --os-name ubuntu --os-version ${{ matrix.ubuntu_distro }} --ros-distro ${{ matrix.ros_distro }}
+          fakeroot debian/rules binary
+          
+          # 3. Export all compiled packages out to the host runner artifact path
+          mkdir -p /workspace/output
+          cp /workspace/src/ouster-ros2/*.deb /workspace/output/
+          
+          EOF
 
       - name: Upload DEB Artifacts
         uses: actions/upload-artifact@v4
@@ -75,12 +94,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: true # Flattens the downloads into a single directory
+          merge-multiple: true
 
       - name: Create GitHub Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          # Use the user-provided input for the tag and release title
           tag_name: ${{ inputs.release_name }}
           name: Release ${{ inputs.release_name }}
           files: artifacts/*.deb
