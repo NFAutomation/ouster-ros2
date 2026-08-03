@@ -32,6 +32,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.ref }}   # Dynamically uses whichever branch you select in the dropdown
           path: src/ouster-ros2
           submodules: recursive
 
@@ -49,11 +50,22 @@ jobs:
           
           set -e
           apt-get update
-          apt-get install -y python3-bloom fakeroot dpkg-dev debhelper dh-python python3-rosdep
+          apt-get install -y python3-bloom fakeroot dpkg-dev debhelper dh-python python3-rosdep git
+          
+          # Fix Git dubious ownership & identity issues inside the container
+          git config --global --add safe.directory '*'
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
           
           cd /workspace/src/ouster-ros2
           rosdep update
           rosdep install --from-paths . --ignore-src -y --rosdistro ${{ matrix.ros_distro }}
+          
+          # Stage the root LICENSE file into the sub-packages for Bloom's copyright generation
+          if [ -f "LICENSE" ]; then
+            cp LICENSE ouster-sensor-msgs/
+            cp LICENSE ouster-ros/
+          fi
           
           # 1. Build the messages package
           echo "Building package: ouster-sensor-msgs"
