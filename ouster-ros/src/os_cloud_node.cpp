@@ -233,6 +233,8 @@ class OusterCloud : public OusterProcessingNodeBase {
         if (impl::check_token(tokens, "PCL") ||
             impl::check_token(tokens, "SCAN") ||
             impl::check_token(tokens, "TLM")) {
+            rclcpp::SubscriptionOptions subscription_options;
+            subscription_options.qos_overriding_options = rclcpp::QosOverridingOptions::with_default_policies();
             lidar_packet_sub = create_subscription<PacketMsg>(
                 "lidar_packets", selected_qos.keep_last(1024),
                 [this](const PacketMsg::ConstSharedPtr msg) {
@@ -251,7 +253,7 @@ class OusterCloud : public OusterProcessingNodeBase {
                     if (lidar_packet_handler) {
                         lidar_packet_handler(lidar_packet);
                     }
-                });
+                }, subscription_options);
         }
     }
 
