@@ -234,7 +234,7 @@ class OusterCloud : public OusterProcessingNodeBase {
             impl::check_token(tokens, "SCAN") ||
             impl::check_token(tokens, "TLM")) {
             lidar_packet_sub = create_subscription<PacketMsg>(
-                "lidar_packets", selected_qos,
+                "lidar_packets", selected_qos.keep_last(1024),
                 [this](const PacketMsg::ConstSharedPtr msg) {
                     // TODO[UN]: this is not ideal since we can't reuse the msg buffer
                     // Need to redefine the Packet object and allow use of array_views
