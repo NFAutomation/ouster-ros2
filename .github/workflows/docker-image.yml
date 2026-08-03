@@ -1,13 +1,7 @@
 name: ouster-ros
 
 on:
-  push:
-    branches:
-      - ros2
-  pull_request:
-    branches:
-      - ros2
-
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
