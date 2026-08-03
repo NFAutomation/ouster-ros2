@@ -1,0 +1,87 @@
+name: Build and Release DEB Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: 'Name/Tag of the release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+# Required permissions for softprops/action-gh-release to create the release
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    name: Build DEB (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            ros_distro: humble
+            ubuntu_distro: jammy
+          - arch: arm64
+            platform: linux/arm64
+            ros_distro: humble
+            ubuntu_distro: jammy
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: src/ouster-ros2
+          submodules: recursive
+
+      - name: Set up QEMU for ARM emulation
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build DEB inside Docker
+        run: |
+          # Use the official ROS Docker image matching the target architecture
+          docker run --rm \
+            --platform ${{ matrix.platform }} \
+            -v ${{ github.workspace }}:/workspace \
+            ros:${{ matrix.ros_distro }}-ros-base \
+            /bin/bash -c "
+              apt-get update && \
+              apt-get install -y python3-bloom fakeroot dpkg-dev debhelper dh-python python3-rosdep && \
+              cd /workspace/src/ouster-ros2 && \
+              rosdep update && \
+              rosdep install --from-paths . --ignore-src -y --rosdistro ${{ matrix.ros_distro }} && \
+              bloom-generate rosdebian --os-name ubuntu --os-version ${{ matrix.ubuntu_distro }} --ros-distro ${{ matrix.ros_distro }} && \
+              fakeroot debian/rules binary && \
+              mkdir -p /workspace/output && \
+              mv ../*.deb /workspace/output/
+            "
+
+      - name: Upload DEB Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ouster-ros2-${{ matrix.arch }}-deb
+          path: output/*.deb
+          retention-days: 5
+
+  release:
+    name: Publish Release
+    needs: build-deb
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download DEB Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true # Flattens the downloads into a single directory
+
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          # Use the user-provided input for the tag and release title
+          tag_name: ${{ inputs.release_name }}
+          name: Release ${{ inputs.release_name }}
+          files: artifacts/*.deb
+          generate_release_notes: true
