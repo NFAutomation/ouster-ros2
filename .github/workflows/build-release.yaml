@@ -14,54 +14,47 @@ permissions:
 jobs:
   build-deb:
     name: Build DEB (${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    # Dynamically switches to a native ARM64 machine or standard x86 machine
+    runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
-            platform: linux/amd64
-            ros_distro: humble
-            ubuntu_distro: jammy
+            runs_on: ubuntu-latest
           - arch: arm64
-            platform: linux/arm64
-            ros_distro: humble
-            ubuntu_distro: jammy
+            runs_on: ubuntu-22.04-arm  # Native GitHub ARM64 Runner
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}   # Dynamically uses whichever branch you select in the dropdown
+          ref: ${{ github.ref }}   # Respects your manual UI branch dropdown selection
           path: src/ouster-ros2
           submodules: recursive
 
-      - name: Set up QEMU for ARM emulation
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
-
       - name: Build DEB inside Docker
         run: |
+          # No manual architecture platforms required—Docker natively targets the host machine CPU
           docker run --rm -i \
-            --platform ${{ matrix.platform }} \
             -v ${{ github.workspace }}:/workspace \
-            ros:${{ matrix.ros_distro }}-ros-base \
+            ros:humble-ros-base \
             /bin/bash << 'EOF'
           
           set -e
           apt-get update
           apt-get install -y python3-bloom fakeroot dpkg-dev debhelper dh-python python3-rosdep git
           
-          # Fix Git dubious ownership & identity issues inside the container
+          # Eliminate Git dubious ownership constraints introduced by the Docker-Host layer
           git config --global --add safe.directory '*'
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
           
           cd /workspace/src/ouster-ros2
           rosdep update
-          rosdep install --from-paths . --ignore-src -y --rosdistro ${{ matrix.ros_distro }}
+          rosdep install --from-paths . --ignore-src -y --rosdistro humble
           
-          # Stage the root LICENSE file into the sub-packages for Bloom's copyright generation
+          # Stage the root LICENSE file down so Bloom doesn't crash generating copyrights
           if [ -f "LICENSE" ]; then
             cp LICENSE ouster-sensor-msgs/
             cp LICENSE ouster-ros/
@@ -70,20 +63,20 @@ jobs:
           # 1. Build the messages package
           echo "Building package: ouster-sensor-msgs"
           cd /workspace/src/ouster-ros2/ouster-sensor-msgs
-          bloom-generate rosdebian --os-name ubuntu --os-version ${{ matrix.ubuntu_distro }} --ros-distro ${{ matrix.ros_distro }}
+          bloom-generate rosdebian --os-name ubuntu --os-version jammy --ros-distro humble
           fakeroot debian/rules binary
           
-          # Install the newly built message DEB so the driver can resolve it as a dependency
+          # Install the local messages package so the driver can resolve it as a workspace dependency
           cd /workspace/src/ouster-ros2
           dpkg -i *.deb || apt-get install -f -y
           
           # 2. Build the core driver package
           echo "Building package: ouster-ros"
           cd /workspace/src/ouster-ros2/ouster-ros
-          bloom-generate rosdebian --os-name ubuntu --os-version ${{ matrix.ubuntu_distro }} --ros-distro ${{ matrix.ros_distro }}
+          bloom-generate rosdebian --os-name ubuntu --os-version jammy --ros-distro humble
           fakeroot debian/rules binary
           
-          # 3. Export all compiled packages out to the host runner artifact path
+          # 3. Export all compiled packages out to the host runner workspace folder
           mkdir -p /workspace/output
           cp /workspace/src/ouster-ros2/*.deb /workspace/output/
           
@@ -111,6 +104,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_name }}
-          name: Release ${{ inputs.release_name }}
+          name: Release ${{ inputs.inputs.release_name }}
           files: artifacts/*.deb
           generate_release_notes: true
